@@ -30,7 +30,7 @@
 ### Windows
 
 1. 打开仓库右侧的 **Releases**。
-2. 下载最新版 `windows-media-downloader-v3.1.0.zip`（后续版本号会相应更新）。
+2. 下载最新版 `windows-media-downloader-v3.1.1.zip`（后续版本号会相应更新）。
 3. 解压全部文件，然后双击 `Start Downloader.cmd`。
 4. 第一次运行会自动准备所需组件；按窗口提示选择浏览器并粘贴链接。
 
@@ -58,6 +58,7 @@
 - 网络连接
 - Python 3.9 或更高版本（缺少时程序会尝试自动安装或引导安装）
 - 对需要登录的内容，建议使用已登录的 Chrome、Edge 或 Firefox
+- 下载前请完全关闭所选浏览器，避免浏览器锁定 Cookie 文件
 
 ## 隐私
 
