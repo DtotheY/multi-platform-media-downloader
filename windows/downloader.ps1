@@ -2,11 +2,15 @@
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 
-$AppDir = Join-Path $env:LOCALAPPDATA "多平台媒体下载器"
+# Keep the internal tools path ASCII-only so Python also works on Korean,
+# Japanese, and other Windows installations with a non-UTF-8 legacy code page.
+$AppDir = Join-Path $env:LOCALAPPDATA "MediaDownloader"
 $VenvDir = Join-Path $AppDir "tools"
 $Python = Join-Path $VenvDir "Scripts\python.exe"
-$UpdateStamp = Join-Path $AppDir ".last_update_v1"
+$UpdateStamp = Join-Path $AppDir ".last_update_v2"
 $DownloadRoot = Join-Path (Join-Path $HOME "Downloads") "媒体下载"
 $ResourceDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $MediaHelper = Join-Path $ResourceDir "media_helper.py"
@@ -18,7 +22,7 @@ New-Item -ItemType Directory -Force -Path $AppDir, $DownloadRoot | Out-Null
 function Show-Title {
     Clear-Host
     Write-Host "========================================"
-    Write-Host "      多平台媒体下载器（Windows）"
+    Write-Host "    多平台媒体下载器（Windows v3.1.1）"
     Write-Host "========================================"
     Write-Host "Instagram · 小红书 · 抖音 · YouTube"
     Write-Host "保存位置：$DownloadRoot"
@@ -102,8 +106,12 @@ function Update-ToolsIfNeeded {
 
 function Get-Ffmpeg {
     if ($script:Ffmpeg -and (Test-Path $script:Ffmpeg)) { return $script:Ffmpeg }
-    $script:Ffmpeg = (& $Python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())").Trim()
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $script:Ffmpeg)) {
+    $ffmpegOutput = @(& $Python -X utf8 -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())")
+    if ($LASTEXITCODE -ne 0 -or $ffmpegOutput.Count -eq 0) {
+        throw "没有找到视频合并组件，请重新启动程序后再试。"
+    }
+    $script:Ffmpeg = ([string]$ffmpegOutput[-1]).Trim()
+    if (-not $script:Ffmpeg -or -not (Test-Path -LiteralPath $script:Ffmpeg)) {
         throw "没有找到视频合并组件，请重新启动程序后再试。"
     }
     return $script:Ffmpeg
@@ -123,6 +131,12 @@ function Choose-Browser {
         "0" { $script:BrowserName = "" }
         default { $script:BrowserName = "chrome" }
     }
+    if ($script:BrowserName) {
+        Write-Host ""
+        Write-Host "重要：开始下载前请完全关闭 $script:BrowserName，"
+        Write-Host "包括任务栏和后台进程，否则浏览器可能锁定登录文件。"
+        [void](Read-Host "关闭浏览器后按回车继续")
+    }
 }
 
 function Invoke-YtDownload {
@@ -132,7 +146,7 @@ function Invoke-YtDownload {
         [bool]$UseCookies = $true
     )
     $ffmpeg = Get-Ffmpeg
-    $arguments = @(
+    $commonArguments = @(
         "-m", "yt_dlp",
         "--no-overwrites", "--no-mtime", "--trim-filenames", "180", "--progress",
         "--format", "bestvideo*+bestaudio/best",
@@ -141,12 +155,23 @@ function Invoke-YtDownload {
         "-P", $Destination,
         "-o", "%(uploader|未知作者)s/%(upload_date|未知日期)s_%(id)s_%(title).100B.%(ext)s"
     )
+    $arguments = @($commonArguments)
     if ($UseCookies -and $script:BrowserName) {
         $arguments += @("--cookies-from-browser", $script:BrowserName)
     }
     $arguments += @("--", $Url)
     & $Python @arguments | Out-Host
-    return $LASTEXITCODE -eq 0
+    if ($LASTEXITCODE -eq 0) { return $true }
+
+    if ($UseCookies -and $script:BrowserName) {
+        Write-Host ""
+        Write-Host "读取浏览器登录状态失败，正在按公开内容重试……" -ForegroundColor Yellow
+        Write-Host "若作品需要登录，请完全关闭浏览器后重新运行本程序。" -ForegroundColor Yellow
+        $publicArguments = @($commonArguments) + @("--", $Url)
+        & $Python @publicArguments | Out-Host
+        return $LASTEXITCODE -eq 0
+    }
+    return $false
 }
 
 function Invoke-InstagramDownload {
